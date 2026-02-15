@@ -59,7 +59,7 @@
 
 ## 📸 System Preview
 ### System Architecture
-![Architecture](images1/architecture.png)
+![Architecture](images1/schematic.png)
 
 ### Software Flowchart
 ![Flowchart](images1/flowchart.png)
