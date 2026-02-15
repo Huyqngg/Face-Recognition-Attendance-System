@@ -58,7 +58,7 @@
 ---
 
 ## 📸 System Preview
-### System Architecture
+### System Schematic
 ![Architecture](images1/schematic.png)
 
 ### Software Flowchart
