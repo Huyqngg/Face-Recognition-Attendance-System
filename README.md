@@ -67,11 +67,4 @@
 ### Actual Results
 ![Result](images1/result.jpg)
 
-## 👥 チームメンバー (Team Members)
-**ハノイ工科大学 (HUST) - マイクロプロセッサ工学クラス:**
-* **Nguyễn Minh Hùng** (20234011): 組み込み開発 (FreeRTOS, Servo, OLED)
-* **Nguyễn Quốc Huy** (20234013): システム設計、ドキュメント作成
-* **Phan Nguyễn Mạnh Lợi** (20234020): ハードウェア設計、回路製作
-* **Hoàng Tuấn Ngọc** (20234028): AI モデル開発、サーバー & Web アプリ構築
 
-**指導教員:** Hàn Huy Dũng 博士
