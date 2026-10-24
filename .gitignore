@@ -1,42 +1,20 @@
-# Local configuration
-config.ini
-**/config.h
-.env
-.env.*
-!.env.example
+# Large files
+*.zip
+*.mp4
+*.avi
+*.mkv
+.jpg
 
-# Enrolled faces, logs, model weights and generated data
-dataset/*
-!dataset/.gitkeep
-logs/
-*.csv
-*.onnx
-*.pth
-*.pkl
-*.npy
-*.npz
 
-# Python and IDE output
-.venv/
-venv/
+# Cache
 __pycache__/
-*.py[cod]
-.pytest_cache/
-*.egg-info/
+*.log
+
+# Environment files
+.venv/
 .vscode/
-.idea/
-build/
-dist/
+env/
 
-# Reports and presentations
-*.pdf
-*.doc
+#another file
 *.docx
-*.ppt
-*.pptx
-reports/
-slides/
-
-# OS files
-.DS_Store
-Thumbs.db
+*.pdf

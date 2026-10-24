@@ -1,213 +1,201 @@
-# ESP32 Face Recognition Attendance System
+# Face Recognition Attendance System with ESP32
 
-**ESP32-CAM · FreeRTOS controller · Streamlit dashboard · face_recognition / InsightFace**
+A group project combining an ESP32-CAM, an ESP32 controller, and a Python desktop/server environment for face recognition, attendance display, and a servo-operated door latch.
 
-A connected prototype for face-based attendance and a servo-driven door latch. An ESP32-CAM provides video, a PC performs face recognition, and a separate ESP32 reads a PIR sensor and drives the servo and OLED display. The PC dashboard also supports enrolling new identities from three viewing angles.
+The repository contains the original project source files and selected existing images. The source files retain their original behavior and configuration style. This README explains how those files fit together and identifies dependencies that are absent from the supplied source.
 
 ![Prototype interface and recognition result](images1/result.jpg)
 
-## Features
+## System Architecture
 
-- **Two-device embedded design:** one AI Thinker ESP32-CAM for imaging and one ESP32 DevKit for motion sensing and actuation.
-- **Complete camera firmware:** JPEG snapshots on port 80 and MJPEG streaming on port 81, with the camera pin map and HTTP implementation included.
-- **PIR-triggered recognition:** the dashboard polls the controller and starts a recognition attempt when motion is detected.
-- **Two recognition backends:** the default app uses the dlib-based `face_recognition` library; an optional app uses InsightFace `buffalo_s` with ONNX Runtime on the CPU.
-- **FreeRTOS actuation:** a queue transfers commands to a servo task, and a mutex protects the OLED. The web server remains available during the door hold interval.
-- **Enrollment:** live front/left/right capture in Streamlit, plus a small JPEG snapshot enrollment tool.
-- **Attendance display:** recognized, unknown, enrollment, and controller-error events are shown in the current Streamlit session.
-- **Portable configuration:** both apps use the same device URLs and dataset path; Wi-Fi credentials belong in local firmware configuration files.
+The system has three main components:
 
-## Architecture
+| Component | Function |
+| --- | --- |
+| ESP32-CAM with OV2640 | Capture images and provide a camera stream over Wi-Fi |
+| ESP32 controller | Read the PIR sensor, handle HTTP requests, control the servo, and update the OLED |
+| PC running Python | Receive camera frames, recognize faces, provide the Streamlit interface, and request controller actions |
 
-```mermaid
-flowchart LR
-    PIR["PIR sensor"] --> Controller["ESP32 controller"]
-    Camera["ESP32-CAM"] -->|"MJPEG :81"| PC["Python / Streamlit"]
-    Controller -->|"PIR status"| PC
-    PC -->|"HTTP commands"| Controller
-    Controller --> Outputs["Servo and OLED"]
-```
+The main workflow is:
 
-### Runtime Sequence
+1. The ESP32 controller exposes the PIR sensor state through `/check_pir`.
+2. The Streamlit application polls that endpoint while waiting for motion.
+3. When motion is detected, the PC opens the ESP32-CAM stream and performs recognition.
+4. A recognized identity causes the PC to call `/open?name=...`.
+5. An unsuccessful recognition causes a request to `/fail` and offers registration through the interface.
+6. The controller's FreeRTOS task handles the servo and display operation while the web server continues handling requests.
 
-1. The controller samples the PIR input and exposes its value through `/check_pir`.
-2. The dashboard polls this endpoint while waiting for motion.
-3. When motion is detected, the PC opens the camera stream and compares a detected face with locally enrolled images.
-4. A match causes a request to `/open?name=...`; an unsuccessful attempt causes a request to `/fail`.
-5. The controller queues the operation. Its worker opens the servo to 180°, holds for approximately 8 seconds, returns to 0°, waits 1 second, and detaches the servo.
-6. An unsuccessful recognition shows an OLED warning for approximately 5 seconds. The dashboard offers enrollment or a return to the waiting state.
+[View the project's workflow diagram](images1/flowchart.png).
 
-Recognition runs on the PC. The ESP32-CAM captures images, while the second ESP32 handles the sensor, display, and actuator. Communication uses HTTP; the dashboard runs in Streamlit.
-
-[View the original workflow diagram](images1/flowchart.png).
-
-## Repository Layout
+## Files
 
 | Path | Purpose |
 | --- | --- |
-| [`recognitionFace.py`](recognitionFace.py) | Default Streamlit app using `face_recognition` |
-| [`InsightFace.py`](InsightFace.py) | Alternative Streamlit app using InsightFace / ONNX Runtime |
-| [`project_config.py`](project_config.py) | Shared settings, identity handling, matching helper, and controller requests |
-| [`config.example.ini`](config.example.ini) | Device URLs, dataset path, and recognition settings |
-| [`enroll.py`](enroll.py) | Save one named enrollment snapshot from the camera |
-| [`firmware/esp32_cam/`](firmware/esp32_cam/) | Camera sketch, AI Thinker pins, HTTP snapshot and MJPEG server |
-| [`firmware/esp32_control/`](firmware/esp32_control/) | FreeRTOS controller for PIR, servo, and OLED |
-| [`tools/check_devices.py`](tools/check_devices.py) | Read-only checks for PIR, JPEG, and MJPEG endpoints |
-| [`tests/test_project.py`](tests/test_project.py) | Offline configuration, matching, resource cleanup, and HTTP regressions |
-| [`dataset/`](dataset/) | Local enrollment images; only the directory placeholder is tracked |
+| [`recognitionFace.py`](recognitionFace.py) | Original Streamlit recognition and enrollment application using `face_recognition` |
+| [`InsightFace.py`](InsightFace.py) | Original alternative Streamlit application using InsightFace |
+| [`RTOS2.ino`](RTOS2.ino) | Original ESP32 controller firmware for PIR, servo, OLED, HTTP, and FreeRTOS |
+| [`esp32cam.ino`](esp32cam.ino) | ESP32-CAM sketch provided in the group's camera repository |
+| [`enroll.py`](enroll.py) | Original OpenCV enrollment utility from the group's Python repository |
+| [`requirements.txt`](requirements.txt) | Original dependency listing from the group's Python repository |
+| [`test.py`](test.py) | Original camera snapshot and face-detection diagnostic |
+| [`test2.py`](test2.py) | Original standalone recognition/streaming script that can send controller commands |
 | [`images1/`](images1/) | Existing schematic, workflow, and prototype images |
-| [`requirements.txt`](requirements.txt) | Default Python backend dependencies |
-| [`requirements-insightface.txt`](requirements-insightface.txt) | Optional InsightFace backend dependencies |
 
-Reports, presentation files, runtime logs, model weights, cache files, local configuration, and enrolled face photographs are excluded from commits. The firmware sketches each reside in a folder matching their `.ino` filename, as expected by the Arduino IDE.
+Reports and presentation files are omitted. The files named `test.py` and `test2.py` are hardware-dependent diagnostic/application scripts, rather than an automated regression test suite.
 
-## Hardware
+## Hardware and Wiring
 
-| Component | Role |
+| Component | Purpose |
 | --- | --- |
-| AI Thinker ESP32-CAM with OV2640 | Wi-Fi camera; PSRAM enables the default VGA configuration |
-| ESP32 DevKit | FreeRTOS controller and HTTP command server |
-| PIR sensor, such as HC-SR501 | Motion input |
-| SSD1306 OLED, 128 × 64 | Status, identity, and time display |
-| Servo, such as SG90 | Demonstration door-latch actuator |
-| USB/serial programmer and suitable power supplies | Programming and device power |
+| ESP32 DevKit | Controller running Wi-Fi, WebServer, and FreeRTOS |
+| ESP32-CAM / OV2640 | Camera node |
+| PIR sensor, such as HC-SR501 | Motion detection |
+| SSD1306 OLED, 128 × 64 | Status and identity display |
+| Servo, such as SG90 | Demonstration door-latch movement |
 
-### Controller Wiring
+The controller firmware defines the following connections:
 
-| Connection | ESP32 controller pin |
+| Signal | ESP32 controller pin |
 | --- | --- |
 | PIR output | GPIO14 |
 | Servo signal | GPIO13 |
 | OLED SDA | GPIO21 |
 | OLED SCL | GPIO22 |
-| OLED address | `0x3C`, with `0x3D` fallback |
-| Ground | Common ground between connected components |
+| OLED address | `0x3C`, with an initialization fallback to `0x3D` |
 
-![Controller, PIR, servo, and OLED wiring](images1/schematic.png)
+![Controller wiring illustration](images1/schematic.png)
 
-Power the servo from an appropriate supply and share ground with the controller. ESP32 GPIO signals use 3.3 V logic. The ESP32-CAM uses its own board-specific camera pin map in `camera_pins.h`; its camera signals are not wired to the controller's PIR/OLED pins.
+Use an appropriate servo supply and common ground with the controller. ESP32 GPIO signals use 3.3 V logic. The controller's pin assignments are separate from the ESP32-CAM's internal camera connections.
 
-## 1. Prepare and Program the Firmware
+## ESP32 Controller Firmware
 
-Use the Arduino IDE with Arduino-ESP32 **3.x** and the appropriate board definitions. The camera implementation uses Espressif's `esp_camera` and `esp_http_server` APIs; its interface and pin mapping were checked against the Arduino-ESP32 3.0.7 reference.
+Open `RTOS2.ino` in an Arduino ESP32 development environment. If the IDE asks to place the sketch in a matching folder, keep the filename and folder name consistent.
 
-For the controller, install these Arduino libraries:
+The source uses:
 
-- Adafruit GFX Library
-- Adafruit SSD1306, including its Library Manager dependencies
-- ESP32Servo compatible with the selected Arduino-ESP32 core
+- `WiFi`, `WebServer`, `Wire`, and the ESP32 FreeRTOS APIs.
+- Adafruit GFX Library.
+- Adafruit SSD1306.
+- ESP32Servo.
 
-`WiFi`, `WebServer`, `Wire`, and FreeRTOS are supplied by the ESP32 core. The camera APIs are supplied by Arduino-ESP32.
+Set the `ssid` and `password` variables in the original firmware for the local Wi-Fi network. Their uploaded values are placeholders; only the Wi-Fi strings were replaced, while the original firmware logic is retained. Upload to the controller and open Serial Monitor at **115200 baud** to obtain its IP address.
 
-### Configure Wi-Fi
+### FreeRTOS Behavior
 
-In **each** firmware folder, copy `config.example.h` to `config.h` and enter the network credentials:
+- `servoQueue` carries commands from the HTTP handlers to `TaskServoControl`.
+- `oledMutex` protects display updates.
+- The servo task is pinned to core 1.
+- A successful-recognition command opens the servo to 180°, waits approximately 8 seconds, returns to 0°, waits approximately 1 second, and detaches the servo.
+- A failure command displays an OLED warning for approximately 5 seconds.
 
-```cpp
-#pragma once
-#define WIFI_SSID "YOUR_WIFI_SSID"
-#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
-```
+### Controller HTTP Endpoints
 
-Local `config.h` files are ignored by Git.
+| Request | Behavior |
+| --- | --- |
+| `GET /check_pir` | Return plain-text `1` when PIR is HIGH, otherwise `0` |
+| `GET /open?name=User01` | Submit a name to the servo/display queue; return `CMD_SENT` |
+| `GET /fail` | Submit the original failure-display command; return `FAIL_SENT` |
+| `GET /scan` | Display the scanning status; return `OK` |
 
-### ESP32-CAM
+The original handlers do not inspect the return value of `xQueueSend`. Their HTTP responses therefore do not confirm that a queue operation or physical servo movement succeeded.
 
-1. Open `firmware/esp32_cam/esp32_cam.ino`; keep its `.cpp` and `.h` files in the same sketch folder.
-2. Select the AI Thinker ESP32-CAM board and the correct serial port. Enable PSRAM for a board that provides it.
-3. Upload using the board's required programming procedure, then restart in normal boot mode.
-4. Open Serial Monitor at **115200 baud** and record the printed IP address.
-5. Check `http://<camera-ip>/capture` and `http://<camera-ip>:81/stream`.
+## ESP32-CAM Source and Required Camera Files
 
-The camera uses VGA JPEG frames when PSRAM is available and QVGA otherwise. The dedicated stream server lets the snapshot endpoint remain on port 80.
+The supplied `esp32cam.ino` configures the AI Thinker camera model and includes the camera initialization and Wi-Fi setup.
 
-### ESP32 Controller
+It references additional camera example files/functions:
 
-1. Open `firmware/esp32_control/esp32_control.ino` and select the matching dual-core ESP32 DevKit board.
-2. Connect the PIR, servo, and OLED according to the table above, then upload.
-3. Record the controller IP from Serial Monitor at **115200 baud**.
-4. Visit `http://<controller-ip>/check_pir`: the response should be `0` or `1`.
+- `camera_pins.h`.
+- `startCameraServer()`.
+- `setupLedFlash()` when the LED pin is defined.
 
-The controller continues operating without an OLED if display initialization fails. Queue or task allocation failures are reported through Serial Monitor.
+Those accompanying implementations are absent from the supplied group repositories. The sketch must be used with its matching original camera example tabs/dependencies to build successfully. No replacement camera-server implementation is included here.
 
-## 2. Configure the Python Applications
+The Python applications expect these camera endpoints:
 
-Copy `config.example.ini` to **`config.ini`** in the repository root and replace the sample IP addresses:
+| Endpoint | Used by |
+| --- | --- |
+| `http://<camera-ip>:81/stream` | Streamlit applications, enrollment utility, and standalone streaming script |
+| `http://<camera-ip>/capture` | `test.py` |
 
-```ini
-[devices]
-camera_stream_url = http://192.168.1.50:81/stream
-camera_capture_url = http://192.168.1.50/capture
-controller_url = http://192.168.1.51
+Confirm that the camera firmware used on the board actually exposes those URLs before running the Python applications.
 
-[paths]
-dataset_dir = dataset
+## Python Environment
 
-[recognition]
-face_distance_threshold = 0.50
-similarity_threshold = 0.50
-capture_timeout_seconds = 30
-```
+The group's dependency listing was recorded for a **Python 3.10 / Windows** environment. Use an environment compatible with the selected backend and its native dependencies.
 
-Both apps, the enrollment tool, and the device checker read this configuration. Relative dataset paths are resolved from the repository root, independently of the current working directory. Without a local file, sample addresses are used; configure the real addresses before connecting hardware.
-
-Environment variables can override individual settings: `ESP32_CAM_URL`, `ESP32_CAM_CAPTURE_URL`, `ESP32_CONTROL_URL`, `FACE_DATASET_DIR`, `FACE_DISTANCE_THRESHOLD`, `FACE_SIMILARITY_THRESHOLD`, and `FACE_CAPTURE_TIMEOUT`.
-
-## 3. Install and Run a Recognition Backend
-
-Use a dedicated environment with **Python 3.10 or 3.11**. The shared dependencies use headless OpenCV because image display is handled by Streamlit.
-
-### Default: face_recognition / dlib
-
-From the repository root, on Windows:
+From the repository root:
 
 ```powershell
 py -3.10 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+The original `requirements.txt` includes local `file:///C:/...` and `file:///D:/...` references for dlib and NumPy. Those paths are specific to the original machine. They must exist or be adjusted in your local environment before installing that dependency listing.
+
+The default application's direct imports require Streamlit, OpenCV, `face_recognition`, NumPy, pandas, and requests. The optional `InsightFace.py` application additionally needs InsightFace and a suitable ONNX Runtime provider. The original requirements listing does not include those optional packages.
+
+dlib may require native build tools when a compatible prebuilt installation is unavailable.
+
+## Configure Device Addresses
+
+The original applications use constants inside each script, rather than a shared configuration file. Run commands from the repository root so their relative `dataset/` paths resolve consistently.
+
+| File | Configuration to check |
+| --- | --- |
+| `recognitionFace.py` | `ESP32_CAM_IP` and `ESP32_CONTROL_IP` |
+| `InsightFace.py` | `ESP32_CAM_IP` and `ESP32_CONTROL_IP` |
+| `enroll.py` | The literal `URL_STREAM` value |
+| `test.py` | `IP_CAM` and the derived `URL_CAPTURE` |
+| `test2.py` | `IP_CAM` and `IP_CONTROL` |
+
+In the original enrollment utility, changing `ESP32_CAM_IP` alone does not change the separately hard-coded `URL_STREAM` string. Set the stream URL itself.
+
+Keep the PC and both ESP32 devices reachable on the same local network. Use the camera node's address for video and the controller node's address for PIR/servo/OLED operations.
+
+## Run the Streamlit Applications
+
+### Default Backend: face_recognition
+
+```powershell
 .\.venv\Scripts\python.exe -m streamlit run recognitionFace.py
 ```
 
-On Linux/macOS, use the corresponding interpreter under `.venv/bin/`:
+This application loads enrolled images, computes face encodings, and matches using the original `TOLERANCE = 0.50` setting.
 
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m streamlit run recognitionFace.py
+### Alternative Backend: InsightFace
+
+After installing the additional backend dependencies:
+
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run InsightFace.py
 ```
 
-The `face_recognition` package depends on dlib. If a compatible wheel is unavailable, installing dlib requires CMake and a supported C++ build toolchain. An environment that already provides a compatible dlib installation is another option. The dependency files contain package names and version constraints rather than machine-specific wheel paths.
+The original application uses `FaceAnalysis(name='buffalo_s', providers=['CPUExecutionProvider'])`. Prepare the corresponding model package in the InsightFace environment. Model weights are not included in this repository.
 
-### Optional: InsightFace / CPU
+Its original cosine-similarity threshold is `SIMILARITY_THRESHOLD = 0.50`. A larger cosine similarity indicates a closer match, while a smaller `face_recognition` distance indicates a closer match; the two metrics are different.
 
-Install this profile in a separate environment:
+Open the local URL printed by Streamlit. The application interface retains its original Vietnamese labels.
 
-```bash
-python -m pip install -r requirements-insightface.txt
-python -m streamlit run InsightFace.py
+## Enrollment
+
+### Initial Images with the Original OpenCV Utility
+
+Create the initial local image set using:
+
+```powershell
+.\.venv\Scripts\python.exe enroll.py
 ```
 
-This application retains the **InsightFace 0.7.3** API used by the project and explicitly selects ONNX Runtime's CPU provider. Obtain the `buffalo_s` model package through InsightFace's model setup process; models are stored under `~/.insightface/models/`. The model weights are not included in this repository. Check the upstream terms for the chosen pretrained model before using it.
+Enter the identity when prompted, look at the camera, press **S** to save the frame, or **Q** to exit. The utility opens an OpenCV window and saves `dataset/<name>.jpg`.
 
-Open the local URL printed by Streamlit, usually `http://localhost:8501`. The existing dashboard labels are primarily Vietnamese; this README documents both backends in English.
+Use simple ASCII identifiers without underscores or path separators. The original applications derive identity labels from the part of the filename before the first underscore.
 
-### Matching Thresholds
+Populate the dataset before relying on the default recognition application: its original matching path can fail when the known-encoding list is empty.
 
-| Backend | Score | Default acceptance rule |
-| --- | --- | --- |
-| `recognitionFace.py` | dlib face-encoding distance; lower is closer | Distance ≤ `0.50` |
-| `InsightFace.py` | Cosine similarity; higher is closer | Similarity > `0.50` |
+### Three-Angle Registration in Streamlit
 
-These two thresholds represent different metrics. Tune them against representative enrollment images and test captures rather than treating them as interchangeable accuracy percentages.
-
-## 4. Enroll Identities
-
-### Streamlit: Live Three-Angle Capture
-
-Select **“Đăng ký khuôn mặt”** in the sidebar. Enter an identifier such as `User01` or `User_01`, then follow the front/left/right prompts. The app captures one visible face after a stable detection sequence and reloads its enrollment cache when registration completes.
-
-Supported identifiers contain 1–40 ASCII letters, digits, underscores, or hyphens and start with a letter or digit. Images are stored as:
+After an unsuccessful recognition attempt, the interface offers **“Đăng ký ngay”**. Enter the identity and follow the front/left/right capture sequence. The saved filenames are:
 
 ```text
 dataset/User01_front.jpg
@@ -215,68 +203,33 @@ dataset/User01_left.jpg
 dataset/User01_right.jpg
 ```
 
-An empty dataset is supported: enroll an identity from the sidebar before attempting a successful match. Registration can also be started after an unsuccessful recognition attempt.
+Keep exactly one face visible during registration. The original application counts consecutive detections to decide when to capture; it does not verify the requested head pose or perform liveness detection.
 
-### CLI: Single JPEG Snapshot
+Enrollment photographs are local input data and are not bundled in this curated source collection.
 
-```bash
-python enroll.py --name User01 --pose front
-python enroll.py --name User01 --pose left
-python enroll.py --name User01 --pose right
+## Original Diagnostics
+
+### Snapshot and Detection Check
+
+```powershell
+.\.venv\Scripts\python.exe test.py
 ```
 
-The tool asks you to position your face, then saves a snapshot from the camera's `/capture` endpoint when you press Enter. It checks the response type and JPEG signature; it does not perform face-quality validation. Use Streamlit for live preview and face-guided capture. Restart the recognition app after adding files with the CLI so its cached database reloads.
+This downloads a camera snapshot, decodes it with OpenCV, runs face detection, and opens a display window.
 
-## HTTP API
+### Standalone Streaming Application
 
-| Device | Request | Response or action |
-| --- | --- | --- |
-| Camera, port 80 | `GET /` | Camera service information |
-| Camera, port 80 | `GET /capture` | JPEG image |
-| Camera, port 81 | `GET /stream` | MJPEG multipart stream |
-| Controller, port 80 | `GET /check_pir` | Plain-text `0` or `1` |
-| Controller, port 80 | `GET /scan` | Show scanning status; optional display endpoint |
-| Controller, port 80 | `GET /open?name=User01` | Queue a servo/OLED operation; `200 CMD_SENT` |
-| Controller, port 80 | `GET /fail` | Queue a recognition-failure display; `200 FAIL_SENT` |
-| Controller, port 80 | `/open` or `/fail` when the queue is full | `503 QUEUE_FULL` |
-
-A `200` control response confirms that a command was queued; it does not verify physical servo movement. The dashboard distinguishes recognition from a failed controller request and records a controller-error status when the command is not accepted. The normal recognition flow uses `/check_pir`, `/open`, and `/fail`.
-
-## Diagnostics and Validation
-
-Before starting recognition, check the configured devices:
-
-```bash
-python tools/check_devices.py
+```powershell
+.\.venv\Scripts\python.exe test2.py
 ```
 
-This checks PIR status, a JPEG response, and an MJPEG response without sending actuator commands.
+This alternative application polls PIR, processes a camera stream, and sends controller commands. Configure its addresses and enrollment images before use. It can operate the servo through the original HTTP endpoints.
 
-Run the offline tests without a camera, face database, or AI packages:
+## Current Behavior and Limitations
 
-```bash
-python -m unittest discover -s tests -v
-```
-
-The nine regression tests cover configuration overrides, invalid settings, safe enrollment identifiers, identity parsing, empty/invalid distance results, empty-dataset handling in both backends, camera release on recognition errors, URL-encoded controller requests, and queue-full responses. They passed during this update, alongside Python syntax and CLI entry-point checks.
-
-The ESP32 sketches have not been compiled or flashed during this update. Full recognition accuracy, model loading, network performance, and physical servo/OLED behavior require validation on the actual setup.
-
-## Troubleshooting and Current Limits
-
-| Symptom | Check |
-| --- | --- |
-| Camera cannot be opened | Confirm the camera IP, port 81, `/stream` path, Wi-Fi reachability, power, and PSRAM/board selection |
-| Snapshot tool fails | Check the separate port-80 `/capture` URL in `config.ini` |
-| Camera connects but nothing matches | Enroll clear images, inspect framing/lighting, and verify the selected backend and its threshold |
-| Camera enrollment stops without saving | Retry after checking the stream and ensuring exactly one face is visible; the enrollment search loop has a configurable timeout |
-| PIR never changes | Check GPIO14, common ground, sensor power, and the PIR module's warm-up/hold settings |
-| OLED stays blank | Check GPIO21/GPIO22, power, and address `0x3C`/`0x3D` |
-| Servo does not move after recognition | Check the controller response, queue availability, GPIO13, servo power, and shared ground |
-| An added image is not recognized | Restart after external file changes; use a supported image extension and a filename matching the identity convention |
-| dlib or InsightFace installation fails | Use a dedicated supported Python environment and install the native build tools required by that backend |
-
-- Attendance history currently lives in the **Streamlit session**. Persistent CSV/SQL storage is a possible extension.
-- The recognition loops and PIR polling introduce latency; the two backends use different scan/countdown timings. No recognition-accuracy or response-time benchmark is asserted here.
-- The enrollment stability check counts detections; it is not a liveness or anti-spoofing system.
-- The controller API is unauthenticated HTTP, intended for a trusted local-network prototype. Additional access controls and physical-security validation are needed for deployment beyond that setting.
+- Attendance history is held in the current Streamlit session. The supplied applications do not implement automatic persistent CSV or SQL storage.
+- Network addresses, Wi-Fi credentials, thresholds, and timing values remain in the original source files.
+- The two recognition applications retain different countdown and cooldown behavior.
+- The camera sketch still requires the original missing camera example dependencies described above.
+- The controller uses unauthenticated HTTP commands and the original queue-handling behavior.
+- Recognition accuracy, response time, firmware compilation, and physical operation have not been newly validated for this source collection. No automated test results are claimed here.

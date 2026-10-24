@@ -1,32 +1,52 @@
-"""Save a single enrollment snapshot; use the Streamlit UI for live three-pose capture."""
+import cv2
+import os
+import time
 
-import argparse
-from urllib.request import urlopen
+# --- CẤU HÌNH ---
+# Thay IP của ESP32-CAM (Con quay phim) vào đây
+ESP32_CAM_IP = "172.20.10.14" 
+#URL_STREAM = f"http://172.20.10.14/"
+URL_STREAM = f"http://172.20.10.14:81/stream"
 
-from project_config import SETTINGS, validate_identity
+# Tên thư mục lưu ảnh
+DATASET_DIR = "dataset"
+if not os.path.exists(DATASET_DIR):
+    os.makedirs(DATASET_DIR)
 
+print(f"--- TOOL ĐĂNG KÝ KHUÔN MẶT ---")
+print(f"1. Nhập tên người muốn đăng ký (Không dấu).")
+print(f"2. Nhìn vào Camera -> Nhấn 'S' để lưu.")
+print(f"3. Nhấn 'Q' để thoát.")
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--name", required=True, help="ASCII identity, e.g. User01")
-    parser.add_argument("--pose", choices=("front", "left", "right"), default="front")
-    parser.add_argument("--yes", action="store_true", help="Capture immediately without a positioning prompt")
-    args = parser.parse_args()
-    try:
-        name = validate_identity(args.name)
-    except ValueError as error:
-        parser.error(str(error))
-    if not args.yes:
-        input(f"Face the camera ({args.pose}), then press Enter to capture: ")
-    with urlopen(SETTINGS.camera_capture_url, timeout=10) as response:
-        image = response.read(10 * 1024 * 1024 + 1)
-        if response.headers.get_content_type() != "image/jpeg" or not image.startswith(b"\xff\xd8") or len(image) > 10 * 1024 * 1024:
-            raise RuntimeError("The camera did not return a valid-sized JPEG response.")
-    SETTINGS.dataset_dir.mkdir(parents=True, exist_ok=True)
-    path = SETTINGS.dataset_dir / f"{name}_{args.pose}.jpg"
-    path.write_bytes(image)
-    print(f"Saved {path}. Restart the recognition app to reload externally added images.")
+user_name = input(">> Nhập tên người dùng: ")
+file_name = f"{user_name}.jpg"
+save_path = os.path.join(DATASET_DIR, file_name)
 
+cap = cv2.VideoCapture(URL_STREAM)
 
-if __name__ == "__main__":
-    main()
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        print("Mất kết nối Camera...")
+        break
+
+    # Hiển thị hướng dẫn
+    display = frame.copy()
+    cv2.putText(display, f"Save: 'S' - Name: {user_name}", (10, 30), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    
+    cv2.imshow("Enrollment Tool", display)
+    key = cv2.waitKey(1) & 0xFF
+
+    if key == ord('s'):
+        # Lưu ảnh
+        cv2.imwrite(save_path, frame)
+        print(f"[OK] Đã lưu ảnh: {save_path}")
+        print("Đang thoát...")
+        time.sleep(1)
+        break
+    elif key == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
